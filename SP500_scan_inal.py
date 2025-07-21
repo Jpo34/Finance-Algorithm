@@ -1,33 +1,22 @@
 import yfinance as yf
 import pandas as pd
-import logging
 from datetime import datetime, timedelta
 
-# --- Configuration ---
+# --- Config ---
 TICKERS_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 SMA_SHORT = 20
 SMA_LONG = 50
 AROC_WEEKS = 20
-AROC_DAYS = AROC_WEEKS * 5  # Approx. trading days in 20 weeks
-
-# --- Setup Logging ---
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+AROC_DAYS = AROC_WEEKS * 5  # 20 weeks ≈ 100 trading days
 
 def get_sp500_tickers():
-    """
-    Fetch the list of S&P 500 tickers from Wikipedia.
-    """
     try:
         tables = pd.read_html(TICKERS_URL)
         return tables[0]["Symbol"].tolist()
     except Exception as e:
-        logging.error(f"Failed to fetch tickers: {e}")
         return []
 
 def fetch_data(ticker):
-    """
-    Download recent historical data for a given ticker.
-    """
     end_date = datetime.now()
     start_date = end_date - timedelta(weeks=30)
 
@@ -36,27 +25,17 @@ def fetch_data(ticker):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         return df
-    except Exception as e:
-        logging.warning(f"Error fetching data for {ticker}: {e}")
+    except Exception:
         return None
 
 def calc_indicators(df):
-    """
-    Calculate SMA, 20-week high, and Average Rate of Change.
-    """
-    try:
-        df["SMA_short"] = df["Close"].rolling(window=SMA_SHORT).mean()
-        df["SMA_long"] = df["Close"].rolling(window=SMA_LONG).mean()
-        df["20w_high"] = df["Close"].rolling(window=AROC_DAYS).max()
-        df["AROC"] = ((df["Close"] - df["Close"].shift(AROC_DAYS)) / df["Close"].shift(AROC_DAYS)) * 100
-    except Exception as e:
-        logging.error(f"Indicator calculation error: {e}")
+    df["SMA_short"] = df["Close"].rolling(window=SMA_SHORT).mean()
+    df["SMA_long"] = df["Close"].rolling(window=SMA_LONG).mean()
+    df["20w_high"] = df["Close"].rolling(window=AROC_DAYS).max()
+    df["AROC"] = ((df["Close"] - df["Close"].shift(AROC_DAYS)) / df["Close"].shift(AROC_DAYS)) * 100
     return df
 
 def analyze_ticker(ticker):
-    """
-    Analyze a single ticker for technical signals.
-    """
     df = fetch_data(ticker)
     if df is None or df.empty:
         return None
@@ -80,32 +59,19 @@ def analyze_ticker(ticker):
                 "20w_high": round(latest["20w_high"], 2),
                 "AROC": round(latest["AROC"], 2),
             }
-    except Exception as e:
-        logging.warning(f"Error analyzing {ticker}: {e}")
-
+    except Exception:
+        return None
     return None
 
-def main():
-    """
-    Main entry point of the script.
-    """
+def run_scan(limit=50):
     tickers = get_sp500_tickers()
-    logging.info(f"Loaded {len(tickers)} tickers.")
-
     results = []
-    for ticker in tickers:
+
+    for ticker in tickers[:limit]:  # Use limit to avoid Streamlit timeout
         result = analyze_ticker(ticker)
         if result:
             results.append(result)
 
-    if results:
-        df_results = pd.DataFrame(results)
-        logging.info("\n📈 Final Results:")
-        print(df_results)
-        df_results.to_csv("sp500_scan_output.csv", index=False)
-    else:
-        logging.info("🚫 No tickers matched the criteria.")
+    return pd.DataFrame(results)
 
-if __name__ == "__main__":
-    main()
 
